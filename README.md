@@ -1,6 +1,8 @@
 # PARALLAX
 
-The first experiment puts the camera on a tripod. Turning it sweeps the image through 360 degrees. A corner can move many pixels while its distance stays unknowable. Choose **Orbit the building** to walk a full circle around the observatory. Now two lines of sight from different positions can locate a corner in space. The sideways slide isolates the simplest version of this effect.
+PARALLAX — Beyond the Frame opens on a moving 360° orbit around a synthetic observatory. Click a building corner in Create to place a glowing portal, planet, title, miniature city or imported OBJ. A 2D comparison follows a tracked pixel with a fixed stamp. The 3D version projects the object through the moving camera.
+
+Break the Frame pauses the shot and opens Reveal. Inspect an image pair, corner tracks, camera positions, triangulation rays and reprojection error. Break compares two scaled rooms and measures reconstruction error against known 3D coordinates under six adjustable capture conditions.
 
 The field notes connect these experiments to the camera solve behind a visual effect such as a sign pinned to a wall. The clip solver estimates camera motion and scene points together from image correspondences. The simulated camera path is known, so you can isolate the effect of changing viewpoint.
 
@@ -14,7 +16,10 @@ From this checkout, run `python3 -m http.server 8000 --directory dist` and open 
 - `vision.js` detects corners in the first image, compares patches along rectified epipolar lines, checks matches backwards and estimates depth from disparity. With focal length in pixels, depth equals focal length times camera travel divided by pixel shift.
 - `video.js` decodes the first three seconds of an uploaded clip into 31 frames.
 - `pose.js` builds image pyramids, tracks corners using Lucas–Kanade updates, checks the return trip and fits an essential matrix with eight-point RANSAC. For uploads it tests pose candidates for positive depth, refines the relative pose and triangulates the surviving tracks. For the simulated orbit it uses the known camera poses and measured pixel matches from frames up to four degrees apart. For the tripod turn it validates tracked pixels against the known rotation. Those matches measure image motion even when depth is unobservable.
-- `app.js` runs both solvers, draws tracks, projects markers and renders the orbitable cloud.
+- `app.js` runs the solvers and connects the timeline, point placement and workspaces.
+- `fx.js` projects procedural meshes, a textured sign or a local OBJ. Object visibility in the synthetic scene uses the rendered depth at the anchor. Uploads use track visibility.
+- `reveal.js` draws the measured observations, viewing rays and sparse cloud for the current frame pair.
+- `break.js` renders two scaled rooms from equations and compares the resulting pixels. Its separate stress test measures RMS 3D position error against the reference depth of three synthetic surfaces.
 
 The uploaded-video solver processes pairs independently. Each estimated translation has unit length. Different pairs therefore have different physical scales. Unknown intrinsics, rolling shutter, zoom, a moving subject, a single flat wall or poor texture can distort the answer. A marker is tied to a reference feature and may disappear if that feature is lost.
 

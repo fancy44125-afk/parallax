@@ -323,5 +323,12 @@ globalThis.Pose = (() => {
     }
     return {points,tracks,matches:tracks.length};
   }
-  return {solve,reconstruct,solveCalibrated};
+  function trackPoint(a,b,p) {
+    const pa=pyramid(a),pb=pyramid(b);
+    const q=track(pa,pb,p);
+    if(!q)return null;
+    const back=track(pb,pa,q);
+    return back && Math.hypot(back[0]-p[0],back[1]-p[1])<1 ? q : null;
+  }
+  return {solve,reconstruct,solveCalibrated,trackPoint};
 })();

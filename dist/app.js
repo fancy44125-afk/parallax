@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const screenCanvas = $('screen'), ctx = screenCanvas.getContext('2d');
 const W = 400, H = 240, focal = 420;
 const frames = new Map(), results = new Map();
-let clip, cloud = false, timer, selected, anchorPoint, drag, yaw = -.24, pitch = .12;
+let clip, mode='create', timer, selected, anchorPoint, drag;
 function index() { return Number($('position').value); }
 function isAngular() { return !clip && $('motion').value !== 'slide'; }
 function lastIndex() { return isAngular() ? 180 : 30; }
@@ -16,6 +16,7 @@ function getFrame(i) {
     const frame = document.createElement('canvas');
     frame.width = 960; frame.height = 576;
     Scene.draw(frame, travel(i), $('motion').value);
+    frame.visibility=Scene.visibility(W,H);
     if(frames.size>=4) frames.delete(frames.keys().next().value);
     frames.set(i, frame);
   }
@@ -42,11 +43,6 @@ function solve(i) {
   }
   return results.get(i);
 }
-function marker(x,y) {
-  ctx.save();ctx.translate(x,y);ctx.strokeStyle='#faffdb';ctx.fillStyle='#4d6c30';ctx.lineWidth=2;
-  ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-33);ctx.stroke();
-  ctx.fillRect(0,-48,84,22);ctx.strokeRect(0,-48,84,22);ctx.fillStyle='white';ctx.font='bold 13px monospace';ctx.fillText('ANCHOR',12,-32);ctx.restore();
-}
 function closest(points,u,v,key1='u',key2='v') {
   return points.reduce((a,b)=>!a || Math.hypot(b[key1]-u,b[key2]-v)<Math.hypot(a[key1]-u,a[key2]-v)?b:a,null);
 }
@@ -54,23 +50,59 @@ function worldFromOrbit(point,i) {
   const eye=cameraAt(reference(i)), c=Math.cos(eye.yaw),s=Math.sin(eye.yaw);
   return {x:eye.x+c*point.x+s*point.z,y:eye.y+point.y,z:eye.z-s*point.x+c*point.z};
 }
-function orbitMarker(i,points) {
-  const eye=cameraAt(i), c=Math.cos(eye.yaw),s=Math.sin(eye.yaw);
-  const dx=anchorPoint.world.x-eye.x, dz=anchorPoint.world.z-eye.z, depth=dx*s+dz*c;
-  if(depth<=0) return;
-  const u=W*.5+focal*(dx*c-dz*s)/depth;
-  const v=H*.58-focal*(anchorPoint.world.y-eye.y)/depth;
-  const near=closest(points,u,v,'u2','v2');
-  // Only show a marker when nearby measured geometry supports its visibility.
-  if(near && Math.hypot(near.u2-u,near.v2-v)<9) {
-    const world=worldFromOrbit(near,i);
-    const observed=(world.x-eye.x)*s+(world.z-eye.z)*c;
-    if(Math.abs(depth-observed)<Math.max(.45,depth*.06))marker(2.4*u,2.4*v);
-  }
+function setAnchor(p) {
+  anchorPoint=null;
+  if(!p)return;
+  const i=index(),eye=cameraAt(reference(i));
+  anchorPoint={...p,world:worldFromOrbit(p,i),heading:cameraAt(i).yaw,frame:i,observations:new Map([[i,[p.u2,p.v2]]]),unit:p.z*.063};
+  // The rectified slide solver measures Y from the sensor center.
+  if(!clip && !isAngular())anchorPoint.world.y+=.08*H*p.z/focal;
 }
-function setAnchor(point) {
-  anchorPoint=point?{...point}:null;
-  if(point && $('motion').value==='orbit')anchorPoint.world=worldFromOrbit(point,index());
+function trackedPixel(i,anchor) {
+  const seen=anchor.observations;
+  if(!seen.has(i)){
+    let best=anchor.frame;
+    for(const [k,p] of seen)if(p && Math.abs(i-k)<Math.abs(i-best))best=k;
+    const q=Pose.trackPoint(pixels(best),pixels(i),seen.get(best));
+    seen.set(i,q);
+  }
+  const uv=seen.get(i);
+  return uv && uv.map(v=>v*2.4);
+}
+function effectAdapter(i,points) {
+  if(!anchorPoint)return null;
+  const anchor=anchorPoint, eye=cameraAt(i),time=clip?clip.duration*i/30:i*.105;
+  if(FX.tracking==='2d')return {track:trackedPixel(i,anchor),scale:focal*.063*2.4,time};
+  const screen=(x,y,z,center)=>z>.02?[(W*.5+focal*x/z)*2.4,(center-focal*y/z)*2.4,z]:null;
+  let project;
+  if(clip){
+    // Upload solves have unit baseline per pair. Use the same reference corner
+    // to express the fixed object in the current pair's reconstructed scale.
+    const p=closest(points,anchor.u,anchor.v),pose=solve(i).pose;
+    if(!pose||!p||Math.hypot(p.u-anchor.u,p.v-anchor.v)>1.5)return null;
+    const unit=p.z*.063;
+    project=(x,y,z)=>{
+      const a=[p.x+x*unit,-p.y-y*unit,p.z+z*unit];
+      const b=pose.R.map((r,k)=>r.reduce((sum,v,j)=>sum+v*a[j],pose.t[k]));
+      return screen(b[0],-b[1],b[2],H/2);
+    };
+
+  }else{
+    const c=Math.cos(eye.yaw),s=Math.sin(eye.yaw),ah=anchor.heading;
+    project=(x,y,z)=>{
+      const dx=anchor.world.x-eye.x+anchor.unit*(x*Math.cos(ah)+z*Math.sin(ah));
+      const dz=anchor.world.z-eye.z+anchor.unit*(-x*Math.sin(ah)+z*Math.cos(ah));
+      return screen(dx*c-dz*s,anchor.world.y-eye.y+y*anchor.unit,dx*s+dz*c,H*.58);
+    };
+    const origin=project(0,0,0);
+    if(!origin)return null;
+    const u=origin[0]/2.4,v=origin[1]/2.4;
+    if(u<0||u>=W||v<0||v>=H)return null;
+    const seen=getFrame(i).visibility[Math.floor(v)*W+Math.floor(u)];
+    if(seen+Math.max(.55,.06*seen)<origin[2])return null;
+
+  }
+  return {project,scale:focal*.063*2.4,time};
 }
 function cameraView(i,points,tracks) {
   ctx.drawImage(getFrame(i),0,0,960,576);
@@ -81,65 +113,34 @@ function cameraView(i,points,tracks) {
     ctx.strokeStyle='#cefb75';ctx.lineWidth=.8;ctx.strokeRect(p.u2-1.25,p.v2-1.25,2.5,2.5);
   }
   ctx.restore();
-  if ($('anchor').checked && anchorPoint){
-    if($('motion').value==='orbit') orbitMarker(i,points);
-    else if(!clip) marker((anchorPoint.u-focal*travel(i)/anchorPoint.z)*2.4,anchorPoint.v*2.4);
-    else {
-      // Re-identify the same reference corner in every independently solved pair.
-      const p=closest(points,anchorPoint.u,anchorPoint.v);
-      if(!i) marker(anchorPoint.u*2.4,anchorPoint.v*2.4);
-      else if(p && Math.hypot(p.u-anchorPoint.u,p.v-anchorPoint.v)<2){
-        const {R,t}=solve(i).pose;
-        const a=[p.x,-p.y,p.z];
-        const b=R.map((row,k)=>row.reduce((sum,v,j)=>sum+v*a[j],t[k]));
-        if(b[2]>0)marker(2.4*(W/2+focal*b[0]/b[2]),2.4*(H/2+focal*b[1]/b[2]));
-      }
-    }
+  if ($('anchor').checked && anchorPoint) {
+    const adapter=effectAdapter(i,points);
+    if(adapter)FX.draw(ctx,adapter);
   }
-}
-function cloudView(points) {
-  ctx.fillStyle='#1e2b26';ctx.fillRect(0,0,960,576);
-  const depths=points.map(p=>p.z).sort((a,b)=>a-b);
-  const scale=depths[Math.floor(depths.length*.5)] || 12;
-  function project(x,y,z){
-    x/=scale; y/=scale; z=z/scale-1;
-    const side=x*Math.cos(yaw)+z*Math.sin(yaw), away=-x*Math.sin(yaw)+z*Math.cos(yaw);
-    const up=y*Math.cos(pitch)-away*Math.sin(pitch), d=2.4+y*Math.sin(pitch)+away*Math.cos(pitch);
-    return d>.05?[480+side*1650/d,288-up*1650/d]:null;
-  }
-  ctx.strokeStyle='#39483c';ctx.lineWidth=1;
-  function line(a,b){if(!a||!b)return;ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();}
-  for(let n=-8;n<=8;n++){line(project(n*scale/8,-scale*.24,0),project(n*scale/8,-scale*.24,scale*2));line(project(-scale,-scale*.24,(n+8)*scale/8),project(scale,-scale*.24,(n+8)*scale/8));}
-  for(const p of [...points].sort((a,b)=>b.z-a.z)){
-    const xy=project(p.x,p.y,p.z);if(!xy)continue;
-    ctx.fillStyle=p.z<scale*.88?'#f4b27b':p.z>scale*1.15?'#8fb6a4':'#d3f38a';ctx.fillRect(xy[0]-2.5,xy[1]-2.5,5,5);
-  }
-  if(!points.length){ctx.fillStyle='#e6efd9';ctx.font='22px sans-serif';ctx.textAlign='center';if($('motion').value==='turn'){
-      ctx.fillText('A tripod turn reveals direction only.',480,263);
-      ctx.font='18px sans-serif'; ctx.fillText('Orbit the building to measure depth from two places.',480,296);
-    } else ctx.fillText('No reliable depth points in this frame pair',480,280);ctx.textAlign='left';}
 }
 function render(){
-  const i=index(), data=solve(i), points=data.points, tracks=data.tracks || points;
-  if(cloud)cloudView(points);else cameraView(i,points,tracks);
+  if(mode==='break')return;
+  const i=index(),data=solve(i),points=data.points,tracks=data.tracks||points;
+  const composite=()=>cameraView(i,points,tracks);
+  if(mode==='reveal'){
+    const j=reference(i);
+    Reveal.draw(ctx,{data,frameA:getFrame(j),frameB:getFrame(i),indexA:j,indexB:i,initialPoint:anchorPoint?.frame===i?closest(points,anchorPoint.u,anchorPoint.v):null,
+      mode:clip?'upload':$('motion').value,cameraA:clip?null:cameraAt(j),cameraB:clip?null:cameraAt(i),
+      path:clip?null:Array.from({length:61},(_,k)=>cameraAt(k*lastIndex()/60)),composite});
+  }else composite();
   $('positionVal').textContent=isAngular() ? (i*2)+'°' : Math.round(i/30*100)+'%';
   $('position').setAttribute('aria-valuetext',$('positionVal').textContent);
   $('anchor').disabled=!anchorPoint && !points.length;
   if($('orbitTry'))$('orbitTry').hidden=clip || $('motion').value!=='turn';
   $('count').textContent=points.length;
   $('shift').textContent=(tracks.reduce((a,p)=>a+Math.hypot(p.u-p.u2,p.v-p.v2),0)/(tracks.length||1)).toFixed(1);
-  $('legendText').textContent=cloud?(points.length?'Drag to orbit · warm points are nearer':'Depth unavailable'):($('tracks').checked && i ? tracks.length+' tracked corners':'Camera image');
-  $('sceneTag').textContent=cloud?'RECONSTRUCTED SPACE':clip?clip.name.toUpperCase():'DESERT OBSERVATORY';
-  let title='Try it',tip='Move the camera, then switch to Point cloud to see which corners reveal their depth.';
-  if($('motion').value==='turn'){title='Why zero 3D points?';tip='Turn the camera on its tripod. Each corner moves across the image, but the lens stays in one place. A near corner and a far one on the same sightline shift identically. Try an orbit to give the tracker a second viewpoint.';}
-  else if(!i){title='One frame gives a direction';tip='Move the camera to get a second ray through each corner. Where the rays meet gives its depth.';}
-  else if(!points.length){title='Too little reliable depth';tip='Try a different frame or clip. The solver needs textured corners, a still scene and camera translation.';}
-  else if(selected){const p=closest(points,selected.u,selected.v);if(p && Math.hypot(p.u-selected.u,p.v-selected.v)<2){title='Selected corner';tip='Image shift '+Math.hypot(p.u-p.u2,p.v-p.v2).toFixed(1)+' px · estimated depth '+p.z.toFixed(1)+(clip?' camera baselines.':' scene units.');}}
-  else if(cloud){title='A sparse reconstruction';tip='Drag the cloud to look from the side. Each dot comes from a matched pair of image patches.';}
-  else if($('anchor').checked){title='Marker anchored';tip='Click another tracked corner to place the marker there, then move the camera.';}
-  if($('motion').value==='orbit' && !selected && !cloud && !$('anchor').checked){
-    title='Walk around the observatory';tip='Drag through 360° to see every side. The tracker compares nearby frames of the orbit. Open Point cloud to see the depths it estimated from those corner matches.';
-  }
+  $('legendText').textContent=mode==='reveal'?'Reconstruction layers':$('tracks').checked?tracks.length+' tracked corners':'Click a corner to place an effect';
+  $('sceneTag').textContent=mode==='reveal'?'RECONSTRUCTION':clip?clip.name.toUpperCase():'DESERT OBSERVATORY';
+  let title='Create',tip='Click a window corner to place a portal. Play the orbit, then choose Break the Frame to inspect the 3D point that holds the effect in place.';
+  if(mode==='reveal'){title='Two frames, one point';tip='The footage stores only pixels. A corner seen from two camera positions gives two lines of sight. Select Triangulation to see how they locate it in space.';}
+  else if($('motion').value==='turn'){title='Why zero 3D points?';tip='Turning the camera moves corners across the image. The lens stays in one place, so each corner still has just one line of sight. An orbit supplies a second viewpoint.';}
+  else if(!points.length){title='Depth unavailable';tip='Choose another moment with textured surfaces visible from two different camera positions.';}
+  else if(anchorPoint&&$('anchor').checked){title='Effect placed';tip='Play the shot or scrub the timeline. Compare 2D point tracking with 3D camera tracking to see how perspective changes your object.';}
   $('tipTitle').textContent=title;$('tip').textContent=tip;
 }
 function stop(){clearInterval(timer);timer=null;$('play').textContent='▶';$('play').setAttribute('aria-label','Play camera movement');}
@@ -150,21 +151,59 @@ function reset(){
   if($('positionLabel'))$('positionLabel').textContent=isAngular()?'Camera angle':clip?'Video position':'Camera position';
   render();
 }
-function view(state){cloud=state;$('cameraTab').setAttribute('aria-pressed',!cloud);$('cloudTab').setAttribute('aria-pressed',cloud);render();}
-$('cameraTab').onclick=()=>view(false);$('cloudTab').onclick=()=>view(true);
+function switchMode(next){
+  stop();mode=next;
+  document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===mode));
+  $('experiment').hidden=mode==='break';$('breakLab').hidden=mode!=='break';
+  if(mode==='break'){BreakLab.init($('breakLab'));return;}
+  const reveal=mode==='reveal';
+  $('fxControls').hidden=reveal;$('revealControls').hidden=!reveal;
+  $('panelTitle').textContent=reveal?'Behind the effect':'Create an effect';
+  $('panelHelp').textContent=reveal?'Inspect the camera solve, one measured corner at a time.':'Click a window corner to place your object. Play the orbit to see it stay attached.';
+  $('viewTitle').textContent=reveal?'Reconstruction monitor':'Footage monitor';
+  $('cloudTab').textContent=reveal?'Back to footage':'Break the Frame';
+  if(reveal)Reveal.reset();
+  render();
+}
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>switchMode(b.dataset.mode));
+$('cloudTab').onclick=()=>switchMode(mode==='reveal'?'create':'reveal');
+$('fullscreen').onclick=async()=>{
+  try{if(document.fullscreenElement)await document.exitFullscreen();else await $('viewer').requestFullscreen();}
+  catch{$('viewer').classList.toggle('expanded');}
+};
 $('position').oninput=()=>{stop();render();};$('motion').onchange=reset;$('tracks').onchange=render;
 $('play').onclick=()=>{if(timer)return stop();if(index()===lastIndex())$('position').value=0;$('play').textContent='Ⅱ';$('play').setAttribute('aria-label','Pause camera movement');timer=setInterval(()=>{$('position').value=index()+1;render();if(index()===lastIndex())stop();},105);};
 $('anchor').onchange=()=>{if($('anchor').checked){setAnchor(closest(solve(index()).points,200,120,'u2','v2'));if(!anchorPoint)$('anchor').checked=false;}selected=null;render();};
-screenCanvas.onpointerdown=e=>{if(cloud){drag=[e.clientX,e.clientY];screenCanvas.setPointerCapture(e.pointerId);return;}
- const rect=screenCanvas.getBoundingClientRect(),ratio=Math.min(rect.width/W,rect.height/H);
- const u=(e.clientX-rect.left-(rect.width-W*ratio)/2)/ratio,v=(e.clientY-rect.top-(rect.height-H*ratio)/2)/ratio;
- selected=closest(solve(index()).points,u,v,'u2','v2');if($('anchor').checked)setAnchor(selected);render();};
-screenCanvas.onpointermove=e=>{if(!drag)return;yaw+=(e.clientX-drag[0])*.009;pitch=Math.max(-1.4,Math.min(1.4,pitch+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];render();};
-screenCanvas.onpointerup=screenCanvas.onpointercancel=()=>drag=null;
-screenCanvas.onkeydown=e=>{if(!cloud||!e.key.startsWith('Arrow'))return;e.preventDefault();yaw+=e.key==='ArrowLeft'?-.1:e.key==='ArrowRight'?.1:0;pitch+=e.key==='ArrowDown'?-.1:e.key==='ArrowUp'?.1:0;render();};
-$('source').onchange=()=>{if($('source').value==='upload'){$('source').selectedIndex=clip?2:0;$('file').click();return;}if($('source').selectedIndex===0){clip?.dispose();clip=null;if($('source').options[2])$('source').remove(2);$('motion').disabled=false;$('motion').options[0].textContent='Sideways slide';$('motion').value='turn';$('sourceHint').hidden=true;reset();}};
+function canvasPixel(e){
+  const r=screenCanvas.getBoundingClientRect(),scale=Math.min(r.width/960,r.height/576);
+  return [(e.clientX-r.left-(r.width-960*scale)/2)/scale,(e.clientY-r.top-(r.height-576*scale)/2)/scale];
+}
+screenCanvas.onpointerdown=e=>{
+  stop();
+  if(mode==='reveal'){drag={x:e.clientX,y:e.clientY,travel:0};screenCanvas.setPointerCapture(e.pointerId);return;}
+  const [x,y]=canvasPixel(e);
+  selected=closest(solve(index()).points,x/2.4,y/2.4,'u2','v2');
+  if(selected){setAnchor(selected);$('anchor').checked=true;}render();
+};
+screenCanvas.onpointermove=e=>{
+  if(!drag)return;
+  const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
+  drag.travel+=Math.hypot(dx,dy);drag.x=e.clientX;drag.y=e.clientY;
+  if(drag.travel>3)Reveal.orbit(dx,dy);
+};
+screenCanvas.onpointerup=e=>{if(drag&&drag.travel<=3)Reveal.pick(...canvasPixel(e));drag=null;};
+screenCanvas.onpointercancel=()=>drag=null;
+screenCanvas.onkeydown=e=>{
+  if(mode==='create'&&e.key==='Enter'){setAnchor(closest(solve(index()).points,200,120,'u2','v2'));$('anchor').checked=!!anchorPoint;render();return;}
+  if(mode!=='reveal'||!e.key.startsWith('Arrow'))return;
+  e.preventDefault();Reveal.orbit(e.key==='ArrowLeft'?-12:e.key==='ArrowRight'?12:0,e.key==='ArrowDown'?12:e.key==='ArrowUp'?-12:0);
+};
+$('source').onchange=()=>{if($('source').value==='upload'){$('source').selectedIndex=clip?2:0;$('file').click();return;}if($('source').selectedIndex===0){clip?.dispose();clip=null;if($('source').options[2])$('source').remove(2);$('motion').disabled=false;$('motion').options[0].textContent='Sideways slide';$('motion').value='orbit';$('sourceHint').hidden=true;reset();}};
 $('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;stop();$('source').disabled=true;$('sourceHint').hidden=false;$('sourceHint').textContent='Reading video frames…';
  try{const loaded=await VideoSource.open(file);clip?.dispose();clip=loaded;if($('source').options[2])$('source').remove(2);$('source').add(new Option(file.name,'current'));$('source').value='current';$('motion').value='slide';$('motion').options[0].textContent='Estimated from video';$('motion').disabled=true;$('sourceHint').textContent='First '+clip.duration.toFixed(1)+' s · depth in camera baselines';reset();}
  catch(e){$('sourceHint').textContent=e.message;}finally{$('source').disabled=false;$('file').value='';}};
 if($('orbitTry'))$('orbitTry').onclick=()=>{$('motion').value='orbit';reset();};
+FX.init($('fxControls'),render);
+Reveal.init($('revealControls'),render);
 reset();
+if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)$('play').click();

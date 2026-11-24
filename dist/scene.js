@@ -266,5 +266,14 @@ globalThis.Scene = (() => {
     }
     ctx.putImageData(image,0,0);
   }
-  return {draw,camera};
+  // Compositing uses a reduced visibility buffer. Reconstruction sees only color images.
+  function visibility(width,height) {
+    const map=new Float32Array(width*height);
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      const offset=Math.floor((y+.5)*buffer.h/height)*buffer.w+Math.floor((x+.5)*buffer.w/width);
+      const inverse=buffer.depth[offset];map[y*width+x]=inverse>0?1/inverse:Infinity;
+    }
+    return map;
+  }
+  return {draw,camera,visibility};
 })();
