@@ -295,5 +295,33 @@ globalThis.Pose = (() => {
     if(a.width!==b.width || a.height!==b.height || !(focal>0)) throw new Error('Invalid camera frames');
     return reconstruct(pairsFrom(a,b),a.width,a.height,focal);
   }
-  return {solve,reconstruct};
+  // Synthetic cameras are calibrated. Fit distances to measured pixel tracks
+  // with the known relative pose. Only uploaded footage estimates that pose.
+  function solveCalibrated(a,b,focal,eyeA,eyeB) {
+    const delta=eyeA.yaw-eyeB.yaw, c=Math.cos(delta),s=Math.sin(delta);
+    const dx=eyeA.x-eyeB.x,dz=eyeA.z-eyeB.z;
+    const cb=Math.cos(eyeB.yaw),sb=Math.sin(eyeB.yaw);
+    const pose={R:[[c,0,s],[0,1,0],[-s,0,c]],
+      t:[cb*dx-sb*dz,eyeB.y-eyeA.y,sb*dx+cb*dz]};
+    const centered=uv=>[(uv[0]-a.width*.5)/focal,(uv[1]-a.height*.58)/focal,1];
+    const translating=norm(pose.t)>1e-7, points=[],tracks=[];
+    for(const pair of pairsFrom(a,b)) {
+      const ray=centered(pair.p);
+      if(translating) {
+        const point=triangulate({...pair,a:ray,b:centered(pair.q)},pose,focal);
+        if(point) {points.push(point);tracks.push(point);}
+      } else {
+        // Rotation predicts image motion independent of distance. Compare it
+        // with the measured match before retaining a 2D track.
+        const rotated=mv(pose.R,ray);
+        if(rotated[2]<=0)continue;
+        const u=a.width*.5+focal*rotated[0]/rotated[2];
+        const v=a.height*.58+focal*rotated[1]/rotated[2];
+        if(Math.hypot(u-pair.q[0],v-pair.q[1])<=2)
+          tracks.push({u:pair.p[0],v:pair.p[1],u2:pair.q[0],v2:pair.q[1]});
+      }
+    }
+    return {points,tracks,matches:tracks.length};
+  }
+  return {solve,reconstruct,solveCalibrated};
 })();
