@@ -1,6 +1,6 @@
 # PARALLAX
 
-PARALLAX — Beyond the Frame opens on a moving 360° orbit around a synthetic observatory. Click a building corner in Create to place a glowing portal, planet, title, miniature city or imported OBJ. A 2D comparison follows a tracked pixel with a fixed stamp. The 3D version projects the object through the moving camera.
+PARALLAX — Beyond the Frame opens on a moving 360° orbit around a synthetic observatory. Click a building corner in Create to place a glowing portal, planet, title, miniature city or imported OBJ. In the simulated shot, both effects share the visible reconstructed corner. The 2D comparison uses only its projected pixel position to translate a fixed-size stamp. Uploaded clips use an image-patch track for the 2D comparison, bridging an isolated missed sample when its neighboring matches agree. The 3D version projects the object through the moving camera.
 
 Break the Frame pauses the shot and opens Reveal. Inspect an image pair, corner tracks, camera positions, triangulation rays and reprojection error. Experiments compares two scaled rooms and measures reconstruction error against known 3D coordinates under six adjustable capture conditions.
 

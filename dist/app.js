@@ -53,37 +53,38 @@ function worldFromOrbit(point,i) {
 function setAnchor(p) {
   anchorPoint=null;
   if(!p)return;
-  const i=index(),eye=cameraAt(reference(i));
+  const i=index();
   anchorPoint={...p,world:worldFromOrbit(p,i),heading:cameraAt(i).yaw,frame:i,observations:new Map([[i,[p.u2,p.v2]]]),unit:p.z*.063};
   // The rectified slide solver measures Y from the sensor center.
   if(!clip && !isAngular())anchorPoint.world.y+=.08*H*p.z/focal;
 }
-function trackedPixel(i,anchor) {
-  // Store only confirmed observations. A missing match can be retried from
-  // a closer frame when the user revisits this part of the timeline.
-  const seen=anchor.observations;
-  let pixel=seen.get(i);
-  anchor.holding=false;
-  if(!pixel){
-    let nearest=anchor.frame;
-    for(const k of seen.keys())if(Math.abs(i-k)<Math.abs(i-nearest))nearest=k;
-    const current=pixels(i);
-    pixel=Pose.trackPoint(pixels(nearest),current,seen.get(nearest));
-    if(!pixel && nearest!==anchor.frame)
-      pixel=Pose.trackPoint(pixels(anchor.frame),current,seen.get(anchor.frame));
-    if(pixel)seen.set(i,pixel);
-    else {
-      // Keep the overlay visible when the patch is ambiguous or occluded.
-      pixel=seen.get(nearest);
-      anchor.holding=true;
+// On uploads, always identify the same patch rather than chaining matches
+// between arbitrary scrub positions. Cache misses as well as observations.
+function uploadPixel(i,anchor) {
+  const measured=frame=>{
+    if(!anchor.observations.has(frame)){
+      const original=[anchor.u2,anchor.v2];
+      anchor.observations.set(frame,Pose.trackPoint(pixels(anchor.frame),pixels(frame),original));
     }
+    return anchor.observations.get(frame);
+  };
+  let p=measured(i);
+  if(!p && i>0 && i<lastIndex()){
+    // Bridge a single missing sample only between two nearby verified matches.
+    const a=measured(i-1),b=measured(i+1);
+    if(a && b && Math.hypot(b[0]-a[0],b[1]-a[1])<=12)
+      p=[(a[0]+b[0])/2,(a[1]+b[1])/2];
   }
-  return pixel.map(v=>v*2.4);
+  return p && p.map(v=>v*2.4);
 }
 function effectAdapter(i,points) {
   if(!anchorPoint)return null;
   const anchor=anchorPoint, eye=cameraAt(i),time=clip?clip.duration*i/30:i*.105;
-  if(FX.tracking==='2d')return {track:trackedPixel(i,anchor),scale:focal*.063*2.4,time};
+  const flat=FX.tracking==='2d',scale=focal*.063*2.4;
+  if(clip && flat){
+    const track=uploadPixel(i,anchor);
+    return track ? {track,scale,time} : null;
+  }
   const screen=(x,y,z,center)=>z>.02?[(W*.5+focal*x/z)*2.4,(center-focal*y/z)*2.4,z]:null;
   let project;
   if(clip){
@@ -111,9 +112,12 @@ function effectAdapter(i,points) {
     if(u<0||u>=W||v<0||v>=H)return null;
     const seen=getFrame(i).visibility[Math.floor(v)*W+Math.floor(u)];
     if(seen+Math.max(.55,.06*seen)<origin[2])return null;
+    // Both demonstrations use the same visible reconstructed corner. The
+    // point tracker gets just its screen coordinates, never the 3D transform.
+    if(flat)return {track:origin.slice(0,2),scale,time};
 
   }
-  return {project,scale:focal*.063*2.4,time};
+  return {project,scale,time};
 }
 function cameraView(i,points,tracks) {
   ctx.drawImage(getFrame(i),0,0,960,576);
@@ -145,8 +149,6 @@ function render(){
   $('count').textContent=points.length;
   $('shift').textContent=(tracks.reduce((a,p)=>a+Math.hypot(p.u-p.u2,p.v-p.v2),0)/(tracks.length||1)).toFixed(1);
   $('legendText').textContent=mode==='reveal'?'Reconstruction layers':$('tracks').checked?tracks.length+' tracked corners':'Click a corner to place an effect';
-  if(mode==='create' && $('anchor').checked && FX.tracking==='2d' && anchorPoint?.holding)
-    $('legendText').textContent='Corner match lost · holding last tracked position';
   $('sceneTag').textContent=mode==='reveal'?'RECONSTRUCTION':clip?clip.name.toUpperCase():'DESERT OBSERVATORY';
   let title='Create',tip='Click a window corner to place a portal. Play the orbit, then choose Break the Frame to inspect the 3D point that holds the effect in place.';
   if(mode==='reveal'){title='Two frames, one point';tip='The footage stores only pixels. A corner seen from two camera positions gives two lines of sight. Select Triangulation to see how they locate it in space.';}
