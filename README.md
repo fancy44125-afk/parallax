@@ -2,7 +2,7 @@
 
 PARALLAX — Beyond the Frame opens on a moving 360° orbit around a synthetic observatory. Click a building corner in Create to place a glowing portal, planet, title, miniature city or imported OBJ. A 2D comparison follows a tracked pixel with a fixed stamp. The 3D version projects the object through the moving camera.
 
-Break the Frame pauses the shot and opens Reveal. Inspect an image pair, corner tracks, camera positions, triangulation rays and reprojection error. Break compares two scaled rooms and measures reconstruction error against known 3D coordinates under six adjustable capture conditions.
+Break the Frame pauses the shot and opens Reveal. Inspect an image pair, corner tracks, camera positions, triangulation rays and reprojection error. Experiments compares two scaled rooms and measures reconstruction error against known 3D coordinates under six adjustable capture conditions.
 
 The field notes connect these experiments to the camera solve behind a visual effect such as a sign pinned to a wall. The clip solver estimates camera motion and scene points together from image correspondences. The simulated camera path is known, so you can isolate the effect of changing viewpoint.
 
