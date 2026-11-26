@@ -1,6 +1,6 @@
 # PARALLAX
 
-PARALLAX — Beyond the Frame opens on a moving 360° orbit around a synthetic observatory. Click a building corner in Create to place a glowing portal, planet, title, miniature city or imported OBJ. In the simulated shot, both effects share the visible reconstructed corner. The 2D comparison uses only its projected pixel position to translate a fixed-size stamp. Uploaded clips use an image-patch track for the 2D comparison, bridging an isolated missed sample when its neighboring matches agree. The 3D version projects the object through the moving camera.
+PARALLAX — Beyond the Frame opens on a moving 360° orbit around a synthetic observatory. Click a building corner in Create to place a glowing portal, planet, title or miniature city. In the simulated shot, both effects share the visible reconstructed corner. The 2D comparison uses only its projected pixel position to translate a fixed-size stamp. Uploaded clips use an image-patch track for the 2D comparison, bridging an isolated missed sample when its neighboring matches agree. The 3D version projects the object through the moving camera.
 
 Break the Frame pauses the shot and opens Reveal. Inspect an image pair, corner tracks, camera positions, triangulation rays and reprojection error.
 
@@ -17,7 +17,7 @@ From this checkout, run `python3 -m http.server 8000 --directory dist` and open 
 - `video.js` decodes the first three seconds of an uploaded clip into 31 frames.
 - `pose.js` builds image pyramids, tracks corners using Lucas–Kanade updates, checks the return trip and fits an essential matrix with eight-point RANSAC. For uploads it tests pose candidates for positive depth, refines the relative pose and triangulates the surviving tracks. For the simulated orbit it uses the known camera poses and measured pixel matches from frames up to four degrees apart.
 - `app.js` runs the solvers and connects the timeline, point placement and workspaces.
-- `fx.js` projects procedural meshes, a textured sign or a local OBJ. Object visibility in the synthetic scene uses the rendered depth at the anchor. Uploads use track visibility.
+- `fx.js` projects procedural meshes and a textured sign. Object visibility in the synthetic scene uses the rendered depth at the anchor. Uploads use track visibility.
 - `reveal.js` draws the measured observations, viewing rays and sparse cloud for the current frame pair.
 
 The uploaded-video solver processes pairs independently. Each estimated translation has unit length. Different pairs therefore have different physical scales. Unknown intrinsics, rolling shutter, zoom, a moving subject, a single flat wall or poor texture can distort the answer. A marker is tied to a reference feature and may disappear if that feature is lost.

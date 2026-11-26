@@ -1,17 +1,16 @@
 // Mesh vertices are offsets in a basis fixed when the user places an anchor.
 // A 3D projection uses the current camera. A 2D track translates a flat stamp.
 globalThis.FX = (() => {
-  const state = {effect:'portal', tracking:'3d', title:'BEYOND', size:1, mesh:null};
+  const state = {effect:'portal', tracking:'3d', title:'BEYOND', size:1};
   const tau = Math.PI * 2;
   const effects = [
     ['portal','Glowing portal'],['planet','Floating planet'],['title','3D text'],
-    ['city','Miniature city'],['obj','Imported model']
+    ['city','Miniature city']
   ];
   function init(container, onChange) {
     container.innerHTML = `<div class="fx-controls">
       <label for="fxPreset">Virtual object</label><select id="fxPreset"></select>
       <div id="fxTitleRow" hidden><label for="fxTitle">Text</label><input id="fxTitle" maxlength="20" value="BEYOND" autocomplete="off"></div>
-      <div id="fxModelRow" hidden><label for="fxModel">Wavefront OBJ mesh</label><input type="file" id="fxModel" accept=".obj,text/plain"><small id="fxModelHint" role="status">Choose an OBJ with vertices and faces, up to 2 MB.</small></div>
       <label for="fxTracking">Tracking method</label><select id="fxTracking"><option value="3d">3D camera tracking</option><option value="2d">2D point tracking</option></select>
       <small id="fxMethodHint">The camera projects the object from its anchor in 3D.</small>
       <label for="fxSize">Object size <output id="fxSizeValue">100%</output></label><input type="range" id="fxSize" min="40" max="180" value="100" step="5">
@@ -24,7 +23,6 @@ globalThis.FX = (() => {
       state.title=el('fxTitle').value.trim() || 'TEXT';
       state.size=Number(el('fxSize').value)/100;
       el('fxTitleRow').hidden=state.effect!=='title';
-      el('fxModelRow').hidden=state.effect!=='obj';
       el('fxSizeValue').textContent=el('fxSize').value+'%';
       el('fxMethodHint').textContent=state.tracking==='3d'?
         'The camera projects the object from its anchor in 3D.':
@@ -33,51 +31,6 @@ globalThis.FX = (() => {
     }
     el('fxPreset').onchange=el('fxTracking').onchange=changed;
     el('fxTitle').oninput=el('fxSize').oninput=changed;
-    let generation=0;
-    el('fxModel').onchange=async event=>{
-      const token=++generation, file=event.target.files[0];
-      if (!file) return;
-      try {
-        if(file.size>2*1024*1024) throw Error('Choose a file under 2 MB.');
-        const mesh=parseOBJ(await file.text());
-        if(token!==generation) return;
-        state.mesh=mesh;
-        el('fxModelHint').textContent=file.name+' · '+mesh.faces.length+' triangles';
-      } catch(error) {
-        if(token!==generation) return;
-        state.mesh=null;
-        el('fxModelHint').textContent=error.message;
-      }
-      onChange();
-    };
-  }
-  function parseOBJ(source) {
-    const vertices=[],faces=[];
-    let min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
-    for (const line of source.split(/\r?\n/)) {
-      const fields=line.split('#')[0].trim().split(/\s+/);
-      if (fields[0]==='v') {
-        const v=fields.slice(1,4).map(Number);
-        if(v.length!==3 || v.some(n=>!Number.isFinite(n) || Math.abs(n)>1e15))
-          throw Error('The OBJ contains an invalid vertex.');
-        v.forEach((n,i)=>{min[i]=Math.min(min[i],n);max[i]=Math.max(max[i],n);});
-        vertices.push(v);
-      } else if(fields[0]==='f') {
-        const indices=fields.slice(1).map(field=>{
-          const raw=Number(field.split('/')[0]),i=raw<0?vertices.length+raw:raw-1;
-          if(!Number.isInteger(i) || i<0 || i>=vertices.length) throw Error('A face refers to a missing vertex.');
-          return i;
-        });
-        for(let i=1;i<indices.length-1;i++){
-          if(faces.length===5000) throw Error('Choose a model with at most 5,000 triangles.');
-          faces.push([indices[0],indices[i],indices[i+1]]);
-        }
-      }
-    }
-    const span=Math.max(...max.map((v,i)=>v-min[i]));
-    if(!faces.length || !(span>0)) throw Error('The OBJ needs vertices and faces with a visible extent.');
-    const center=min.map((v,i)=>(v+max[i])/2);
-    return {vertices:vertices.map(p=>p.map((v,i)=>(v-center[i])*2/span)),faces};
   }
 
   function dot(a,b){return a.reduce((sum,v,i)=>sum+v*b[i],0);}
@@ -194,21 +147,12 @@ globalThis.FX = (() => {
       }
       for(let i=5;i>=0;i--)face(i*.024,i?.38:1);
     }
-    function model() {
-      if(!state.mesh)return;
-      for(const face of state.mesh.faces){
-        const [a,b,c]=face.map(i=>state.mesh.vertices[i]);
-        const light=Math.abs(dot(normal(a,b,c),[-.52,.72,-.45]));
-        polygon([a,b,c],shade(185,47,28+41*light));
-      }
-    }
     ctx.save();
     try{
       if(state.effect==='portal')portal();
       else if(state.effect==='planet')planet();
       else if(state.effect==='city')city();
       else if(state.effect==='title')title();
-      else model();
       flush();
     } finally {ctx.restore();}
   }
