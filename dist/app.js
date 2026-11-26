@@ -131,7 +131,6 @@ function cameraView(i,points,tracks) {
   }
 }
 function render(){
-  if(mode==='break')return;
   const i=index(),data=solve(i),points=data.points,tracks=data.tracks||points;
   const composite=()=>cameraView(i,points,tracks);
   if(mode==='reveal'){
@@ -164,8 +163,6 @@ function reset(){
 function switchMode(next){
   stop();mode=next;
   document.querySelectorAll('[data-mode]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===mode));
-  $('experiment').hidden=mode==='break';$('breakLab').hidden=mode!=='break';
-  if(mode==='break'){BreakLab.init($('breakLab'));return;}
   const reveal=mode==='reveal';
   $('fxControls').hidden=reveal;$('revealControls').hidden=!reveal;
   $('panelTitle').textContent=reveal?'Behind the effect':'Create an effect';
