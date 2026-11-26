@@ -4,8 +4,7 @@ globalThis.FX = (() => {
   const state = {effect:'portal', tracking:'3d', title:'BEYOND', size:1};
   const tau = Math.PI * 2;
   const effects = [
-    ['portal','Glowing portal'],['planet','Floating planet'],['title','3D text'],
-    ['city','Miniature city']
+    ['portal','Glowing portal'],['title','3D text']
   ];
   function init(container, onChange) {
     container.innerHTML = `<div class="fx-controls">
@@ -33,13 +32,6 @@ globalThis.FX = (() => {
     el('fxTitle').oninput=el('fxSize').oninput=changed;
   }
 
-  function dot(a,b){return a.reduce((sum,v,i)=>sum+v*b[i],0);}
-  function normal(a,b,c) {
-    const u=b.map((v,i)=>v-a[i]),v=c.map((n,i)=>n-a[i]);
-    const n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
-    const length=Math.hypot(...n)||1;return n.map(x=>x/length);
-  }
-  function shade(hue,saturation,light){return 'hsl('+hue+' '+saturation+'% '+light+'%)';}
   function draw(ctx,adapter) {
     const fixed=state.tracking==='2d', origin=adapter.track;
     if(fixed && !origin) return;
@@ -95,36 +87,6 @@ globalThis.FX = (() => {
       glowLine(ring(.98),'#e0ffff',pen*.64,true);
       glowLine(ring(1.07),'#63d4ee',pen*.35,true);
     }
-    function planet() {
-      const p=(i,j)=>{
-        const lon=tau*i/32,lat=Math.PI*(j/16-.5),r=.75;
-        return [r*Math.cos(lat)*Math.cos(lon),r*Math.sin(lat)+.33,r*Math.cos(lat)*Math.sin(lon)];
-      };
-      for(let i=0;i<32;i++) for(let j=0;j<16;j++){
-        const a=p(i,j),b=p(i+1,j),c=p(i+1,j+1),d=p(i,j+1);
-        const light=dot(normal(a,d,b),[-.42,.71,-.56]);
-        const bands=Math.sin(j*1.95+.55*Math.sin(i*tau/32+time*.55));
-        polygon([a,b,c,d],shade(27+bands*6,61,43+20*light+8*bands));
-      }
-      for(let i=0;i<64;i++){
-        const at=(k,r)=>[r*Math.cos(tau*k/64),.33+r*.27*Math.cos(tau*k/64)+.26*r*Math.sin(tau*k/64),r*Math.sin(tau*k/64)];
-        polygon([at(i,.94),at(i+1,.94),at(i+1,1.20),at(i,1.20)],'rgba(255,218,154,.8)');
-      }
-    }
-    function box(x,z,w,h,d){
-      const p=(i,j,k)=>[x+w*i,h*j,z+d*k];
-      polygon([p(0,1,0),p(1,1,0),p(1,1,1),p(0,1,1)],'#91f6ed');
-      polygon([p(0,0,0),p(1,0,0),p(1,1,0),p(0,1,0)],'#247583','#71b9c1');
-      polygon([p(0,0,1),p(1,0,1),p(1,1,1),p(0,1,1)],'#21505e');
-      for(const i of [0,1])polygon([p(i,0,0),p(i,0,1),p(i,1,1),p(i,1,0)],i?'#215764':'#48929d');
-    }
-    function city(){
-      polygon([[-1,0,-.75],[1,0,-.75],[1,0,.75],[-1,0,.75]],'#18434d','#9defef');
-      for(let i=0;i<5;i++)for(let j=0;j<4;j++){
-        const n=(i*37+j*17+i*j*5)%19, height=.17+n*.052;
-        box(-.88+.37*i,-.62+.31*j,.23,height*(.92+.08*Math.sin(time*2+n)),.20);
-      }
-    }
     // Texture an extruded sign with a locally affine map for each half of its face.
     function title() {
       if(!titleImage || titleImage.key!==state.title){
@@ -150,8 +112,6 @@ globalThis.FX = (() => {
     ctx.save();
     try{
       if(state.effect==='portal')portal();
-      else if(state.effect==='planet')planet();
-      else if(state.effect==='city')city();
       else if(state.effect==='title')title();
       flush();
     } finally {ctx.restore();}
