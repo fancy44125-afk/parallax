@@ -23,6 +23,4 @@ From this checkout, run `python3 -m http.server 8000 --directory dist` and open 
 
 The uploaded-video solver processes pairs independently. Each estimated translation has unit length. Different pairs therefore have different physical scales. Unknown intrinsics, rolling shutter, zoom, a moving subject, a single flat wall or poor texture can distort the answer. A marker is tied to a reference feature and may disappear if that feature is lost.
 
-## Authorship
 
-Codex generated the implementation and assisted with numerical checks and the captioned demo. No hosted AI or computer-vision service participates in the running experiment. The team should review, test and be prepared to explain its submission.
