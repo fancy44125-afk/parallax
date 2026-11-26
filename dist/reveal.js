@@ -84,7 +84,7 @@ globalThis.Reveal = (() => {
     return [b[0],-b[1],b[2]];
   }
   function measuredRay(p,a,cam) {
-    const cy=a.mode==='orbit'||a.mode==='turn'?139.2:120;
+    const cy=a.mode==='orbit'?139.2:120;
     const b=[(p.u2-200)/420,(cy-p.v2)/420,1];
     let direction;
     if(a.cameraA&&a.cameraB) {
@@ -101,7 +101,7 @@ globalThis.Reveal = (() => {
   }
   function reproj(p,a){
     const b=inCameraB(p,a);if(!b || b[2]<=0)return null;
-    const cy=a.mode==='orbit'||a.mode==='turn'?139.2:120;
+    const cy=a.mode==='orbit'?139.2:120;
     return [200+420*b[0]/b[2],cy-420*b[1]/b[2]];
   }
   function spatial(c,a,w,h){
@@ -140,7 +140,7 @@ globalThis.Reveal = (() => {
       if(xy)crosshair(c,...xy,'#fff',8);
     }
     if(!pts.length){
-      const msg=a.mode==='turn'?'Pure rotation gives one camera center. Depth stays unknown.':'Move the camera to obtain a pair with measurable depth.';
+      const msg='Move the camera to obtain a pair with measurable depth.';
       text(c,msg,w*.08,h*.42,'#d0e2e5',Math.min(19,w/48));
     }
   }

@@ -143,7 +143,7 @@ globalThis.Scene = (() => {
     }
   }
   polygon([[-4,.012,13],[3.8,.012,14],[7.5,.012,17.8],[1.5,.012,17.2]],'#95725b',false);
-  // A small cluster of survey posts gives the tripod something to track behind it.
+  // A small cluster of survey posts gives the tracker distinctive corners.
   function post(x,z,height) {
     const s=.12;
     polygon([[x,0,z],[x+s,0,z],[x+s,height,z],[x,height,z]],'#765748',false);
@@ -180,12 +180,11 @@ globalThis.Scene = (() => {
   function camera(travel=0,mode='slide') {
     const angle = travel===.85 ? 0 : travel/.85*2*Math.PI;
     if(mode==='orbit') return {x:-15*Math.sin(angle),y:1.74,z:15-15*Math.cos(angle),yaw:angle};
-    if(mode==='turn'||mode===true) return {x:0,y:1.74,z:0,yaw:angle};
     return {x:travel,y:1.74,z:0,yaw:0};
   }
 
   // Clip before dividing by Z. This prevents polygons behind the lens from
-  // jumping across the frame when a tripod turn passes the side of a wall.
+  // jumping across the frame when the camera passes the side of a wall.
   const near=.15;
   function clipNear(pts) {
     const out=[];

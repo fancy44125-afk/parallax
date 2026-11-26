@@ -20,10 +20,9 @@ globalThis.BreakLab = (() => {
     const ctx=canvas.getContext('2d'), img=ctx.createImageData(roomW,roomH);
     const translation=amount*(scaleTravel ? 1 : 1/k);
     const origin=[mode==='slide'?translation:0, 0, mode==='forward'?translation:0];
-    const yaw=mode==='turn'?amount*.23:0, sin=Math.sin(yaw),cos=Math.cos(yaw);
     for(let v=0;v<roomH;v++) for(let u=0;u<roomW;u++) {
       const x=(u+.5-roomW/2)/roomF, y=(roomH/2-v-.5)/roomF;
-      const ray=[x*cos+sin,y,cos-x*sin];
+      const ray=[x,y,1];
       let nearest=Infinity, hit=-1, axis=0;
       for(let n=0;n<boxes.length;n++) {
         const [min,max]=boxes[n];
@@ -114,9 +113,9 @@ globalThis.BreakLab = (() => {
   function init(container) {
     if(container.dataset.breakInitialized)return;
     container.dataset.breakInitialized='true';
-    container.innerHTML='<style>'+css+'</style><div class="bl-wrap"><div class="bl-tabs"><button aria-pressed="true" data-tab="room">Impossible room</button><button aria-pressed="false" data-tab="bench">Tracking stress test</button></div><section data-pane="room"><h2>The impossible room</h2><p>Which gallery is life-size? Compare a small room with a copy four times larger and farther away. Start with a turn, then move both cameras sideways.</p><div class="bl-images">'+
-      imagePanel('World A · miniature gallery','a',roomW,roomH)+imagePanel('World B · 4× scale','b',roomW,roomH)+'</div><div class="bl-controls"><label>Camera move <select name="move"><option value="turn">Turn in place</option><option value="slide">Sideways slide</option><option value="forward">Move forward</option></select></label>'+
-      slider('amount','Turn angle',0,100,1,0)+'<label><input type="checkbox" name="scale"> Scale B’s camera travel by 4×</label></div><div class="bl-status"><strong data-room-measure></strong><p data-room-result></p></div></section><section data-pane="bench" hidden><h2>Tracking stress test</h2><p>These three panels sit at known depths. Change the footage and measure how closely the tracker recovers their actual 3D positions.</p><div class="bl-images">'+
+    container.innerHTML='<style>'+css+'</style><div class="bl-wrap"><div class="bl-tabs"><button aria-pressed="true" data-tab="room">Impossible room</button><button aria-pressed="false" data-tab="bench">Tracking stress test</button></div><section data-pane="room"><h2>The impossible room</h2><p>Which gallery is life-size? Compare a small room with a copy four times larger and farther away. Start with both cameras still, then move them sideways or forward.</p><div class="bl-images">'+
+      imagePanel('World A · miniature gallery','a',roomW,roomH)+imagePanel('World B · 4× scale','b',roomW,roomH)+'</div><div class="bl-controls"><label>Camera move <select name="move"><option value="slide">Sideways slide</option><option value="forward">Move forward</option></select></label>'+
+      slider('amount','Camera travel',0,100,1,0)+'<label><input type="checkbox" name="scale"> Scale B’s camera travel by 4×</label></div><div class="bl-status"><strong data-room-measure></strong><p data-room-result></p></div></section><section data-pane="bench" hidden><h2>Tracking stress test</h2><p>These three panels sit at known depths. Change the footage and measure how closely the tracker recovers their actual 3D positions.</p><div class="bl-images">'+
       imagePanel('Original frame','first',width,height)+imagePanel('Second frame · dots mark reconstructed corners','second',width,height)+'</div><div class="bl-bench-range">'+
       slider('travel','Camera travel',0,1,.01,.4)+slider('texture','Surface texture',0,100,1,90)+slider('light','Lighting change',0,100,1,0)+slider('repeat','Repeated pattern',0,100,1,0)+slider('moving','Subject drift',0,1,.01,0)+slider('noise','Image noise',0,100,1,0)+'</div><div class="bl-status"><strong data-score aria-live="polite"></strong><p>3D error is the root-mean-square distance from each recovered corner to its true position, in scene units. Cyan dots fall within 0.5 units. Orange dots exceed that distance.</p><button class="bl-reset" type="button">Reset</button></div></section></div>';
     const one=q=>container.querySelector(q),el=n=>one('[name="'+n+'"]');
@@ -127,11 +126,9 @@ globalThis.BreakLab = (() => {
       let changed=0;
       for(let i=0;i<a.data.length;i+=4)if(a.data[i]!==b.data[i]||a.data[i+1]!==b.data[i+1]||a.data[i+2]!==b.data[i+2])changed++;
       const lbl=el('amount').parentElement;
-      lbl.querySelector('span').firstChild.textContent=mode==='turn'?'Turn angle ':'Camera travel ';
-      lbl.querySelector('output').textContent=mode==='turn'?Math.round(amount*.23*180/Math.PI)+'°':amount.toFixed(2)+' u';
-      el('scale').disabled=mode==='turn';
+      lbl.querySelector('output').textContent=amount.toFixed(2)+' u';
       one('[data-room-measure]').textContent=(100*changed/(roomW*roomH)).toFixed(1)+'% pixels differ';
-      one('[data-room-result]').textContent=amount===0?'Both images line up exactly. From this frame alone either room could have produced the footage.':mode==='turn'?'Both cameras turn through the same angle. Every feature stays on the same sightline in both worlds, whatever its distance.':el('scale').checked?'Enlarge both the scene and camera travel in the same proportion and the images line up again. Recovering absolute size requires a known measurement.':'Equal camera travel has a bigger effect in the miniature room. Now scale B’s camera travel to test whether the images alone can establish absolute size.';
+      one('[data-room-result]').textContent=amount===0?'Both images line up exactly. From this frame alone either room could have produced the footage.':el('scale').checked?'Enlarge both the scene and camera travel in the same proportion and the images line up again. Recovering absolute size requires a known measurement.':'Equal camera travel has a bigger effect in the miniature room. Now scale B’s camera travel to test whether the images alone can establish absolute size.';
     }
     function updateBench(){
       const s={};

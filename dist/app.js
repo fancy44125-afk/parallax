@@ -5,11 +5,11 @@ const W = 400, H = 240, focal = 420;
 const frames = new Map(), results = new Map();
 let clip, mode='create', timer, selected, anchorPoint, drag;
 function index() { return Number($('position').value); }
-function isAngular() { return !clip && $('motion').value !== 'slide'; }
+function isAngular() { return !clip && $('motion').value === 'orbit'; }
 function lastIndex() { return isAngular() ? 180 : 30; }
 function travel(i) { return i / lastIndex() * .85; }
 function cameraAt(i) { return Scene.camera(travel(i), $('motion').value); }
-function reference(i) { return isAngular() ? Math.max(0, i - ($('motion').value === 'turn' ? 1 : 2)) : 0; }
+function reference(i) { return isAngular() ? Math.max(0, i - 2) : 0; }
 function getFrame(i) {
   if (clip) return clip.frames[i];
   if (!frames.has(i)) {
@@ -59,15 +59,26 @@ function setAnchor(p) {
   if(!clip && !isAngular())anchorPoint.world.y+=.08*H*p.z/focal;
 }
 function trackedPixel(i,anchor) {
+  // Store only confirmed observations. A missing match can be retried from
+  // a closer frame when the user revisits this part of the timeline.
   const seen=anchor.observations;
-  if(!seen.has(i)){
-    let best=anchor.frame;
-    for(const [k,p] of seen)if(p && Math.abs(i-k)<Math.abs(i-best))best=k;
-    const q=Pose.trackPoint(pixels(best),pixels(i),seen.get(best));
-    seen.set(i,q);
+  let pixel=seen.get(i);
+  anchor.holding=false;
+  if(!pixel){
+    let nearest=anchor.frame;
+    for(const k of seen.keys())if(Math.abs(i-k)<Math.abs(i-nearest))nearest=k;
+    const current=pixels(i);
+    pixel=Pose.trackPoint(pixels(nearest),current,seen.get(nearest));
+    if(!pixel && nearest!==anchor.frame)
+      pixel=Pose.trackPoint(pixels(anchor.frame),current,seen.get(anchor.frame));
+    if(pixel)seen.set(i,pixel);
+    else {
+      // Keep the overlay visible when the patch is ambiguous or occluded.
+      pixel=seen.get(nearest);
+      anchor.holding=true;
+    }
   }
-  const uv=seen.get(i);
-  return uv && uv.map(v=>v*2.4);
+  return pixel.map(v=>v*2.4);
 }
 function effectAdapter(i,points) {
   if(!anchorPoint)return null;
@@ -131,14 +142,14 @@ function render(){
   $('positionVal').textContent=isAngular() ? (i*2)+'°' : Math.round(i/30*100)+'%';
   $('position').setAttribute('aria-valuetext',$('positionVal').textContent);
   $('anchor').disabled=!anchorPoint && !points.length;
-  if($('orbitTry'))$('orbitTry').hidden=clip || $('motion').value!=='turn';
   $('count').textContent=points.length;
   $('shift').textContent=(tracks.reduce((a,p)=>a+Math.hypot(p.u-p.u2,p.v-p.v2),0)/(tracks.length||1)).toFixed(1);
   $('legendText').textContent=mode==='reveal'?'Reconstruction layers':$('tracks').checked?tracks.length+' tracked corners':'Click a corner to place an effect';
+  if(mode==='create' && $('anchor').checked && FX.tracking==='2d' && anchorPoint?.holding)
+    $('legendText').textContent='Corner match lost · holding last tracked position';
   $('sceneTag').textContent=mode==='reveal'?'RECONSTRUCTION':clip?clip.name.toUpperCase():'DESERT OBSERVATORY';
   let title='Create',tip='Click a window corner to place a portal. Play the orbit, then choose Break the Frame to inspect the 3D point that holds the effect in place.';
   if(mode==='reveal'){title='Two frames, one point';tip='The footage stores only pixels. A corner seen from two camera positions gives two lines of sight. Select Triangulation to see how they locate it in space.';}
-  else if($('motion').value==='turn'){title='Why zero 3D points?';tip='Turning the camera moves corners across the image. The lens stays in one place, so each corner still has just one line of sight. An orbit supplies a second viewpoint.';}
   else if(!points.length){title='Depth unavailable';tip='Choose another moment with textured surfaces visible from two different camera positions.';}
   else if(anchorPoint&&$('anchor').checked){title='Effect placed';tip='Play the shot or scrub the timeline. Compare 2D point tracking with 3D camera tracking to see how perspective changes your object.';}
   $('tipTitle').textContent=title;$('tip').textContent=tip;
@@ -202,7 +213,6 @@ $('source').onchange=()=>{if($('source').value==='upload'){$('source').selectedI
 $('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;stop();$('source').disabled=true;$('sourceHint').hidden=false;$('sourceHint').textContent='Reading video frames…';
  try{const loaded=await VideoSource.open(file);clip?.dispose();clip=loaded;if($('source').options[2])$('source').remove(2);$('source').add(new Option(file.name,'current'));$('source').value='current';$('motion').value='slide';$('motion').options[0].textContent='Estimated from video';$('motion').disabled=true;$('sourceHint').textContent='First '+clip.duration.toFixed(1)+' s · depth in camera baselines';reset();}
  catch(e){$('sourceHint').textContent=e.message;}finally{$('source').disabled=false;$('file').value='';}};
-if($('orbitTry'))$('orbitTry').onclick=()=>{$('motion').value='orbit';reset();};
 FX.init($('fxControls'),render);
 Reveal.init($('revealControls'),render);
 reset();

@@ -9,3 +9,7 @@ footer a,main a{color:#405c34}footer a{font-size:14px}pre{padding:16px;backgroun
 .viewer.expanded{position:fixed;inset:0;z-index:20;width:100vw;height:100dvh}.viewer.expanded .stage{flex:1;aspect-ratio:auto}
 
 .intro .project-intro{max-width:85ch;margin-top:10px}
+
+nav .open-experiment{color:#8cfff5;font-weight:650;text-decoration:underline;text-underline-offset:.24em}nav .open-experiment:hover,nav .open-experiment:focus-visible{color:white}
+
+.tracking-note{margin:24px 0 18px;border-top:1px solid var(--edge);padding-top:5px}.tracking-note p{max-width:85ch}.tracking-note p+p{margin-top:8px!important}

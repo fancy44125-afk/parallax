@@ -28,7 +28,7 @@ globalThis.FX = (() => {
       el('fxSizeValue').textContent=el('fxSize').value+'%';
       el('fxMethodHint').textContent=state.tracking==='3d'?
         'The camera projects the object from its anchor in 3D.':
-        'One image point carries the overlay. Its size and orientation stay fixed.';
+        '2D tracking follows a spot on the screen. Its size and orientation stay fixed.';
       onChange();
     }
     el('fxPreset').onchange=el('fxTracking').onchange=changed;
