@@ -177,10 +177,9 @@ globalThis.Scene = (() => {
     boulder(x+width*1.3,z-width*.48,width*.38,height*.46);
   }
 
-  function camera(travel=0,mode='slide') {
+  function camera(travel=0) {
     const angle = travel===.85 ? 0 : travel/.85*2*Math.PI;
-    if(mode==='orbit') return {x:-15*Math.sin(angle),y:1.74,z:15-15*Math.cos(angle),yaw:angle};
-    return {x:travel,y:1.74,z:0,yaw:0};
+    return {x:-15*Math.sin(angle),y:1.74,z:15-15*Math.cos(angle),yaw:angle};
   }
 
   // Clip before dividing by Z. This prevents polygons behind the lens from
@@ -226,13 +225,13 @@ globalThis.Scene = (() => {
   }
   // Reuse one drawing buffer. Frame canvases retain only their color images.
   let buffer;
-  function draw(canvas,travel=0,mode='slide'){
+  function draw(canvas,travel=0){
     const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height,f=1.05*w;
     if(!buffer || buffer.w!==w || buffer.h!==h){
       const image=ctx.createImageData(w,h);
       buffer={w,h,image, rgb:new Uint32Array(image.data.buffer),depth:new Float32Array(w*h)};
     }
-    const {image,rgb,depth}=buffer, eye=camera(travel,mode),sy=Math.sin(eye.yaw),cy=Math.cos(eye.yaw);
+    const {image,rgb,depth}=buffer, eye=camera(travel),sy=Math.sin(eye.yaw),cy=Math.cos(eye.yaw);
     function transform([x,y,z]){
       const dx=x-eye.x,dz=z-eye.z;
       return [dx*cy-dz*sy,y-eye.y,dx*sy+dz*cy];

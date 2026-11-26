@@ -13,7 +13,7 @@ From this checkout, run `python3 -m http.server 8000 --directory dist` and open 
 ## Code walkthrough
 
 - `scene.js` projects a textured, stationary world into each camera view. Each world-space face has a fixed color. A depth buffer chooses the visible face at each pixel as the camera turns. The tracker receives the images and camera calibration separately from this geometry.
-- `vision.js` detects corners in the first image, compares patches along rectified epipolar lines, checks matches backwards and estimates depth from disparity. With focal length in pixels, depth equals focal length times camera travel divided by pixel shift.
+- `vision.js` is a standalone reference solver, no longer loaded by the website. It detects corners in the first image, compares patches along rectified epipolar lines, checks matches backwards and estimates depth from disparity. With focal length in pixels, depth equals focal length times camera travel divided by pixel shift.
 - `video.js` decodes the first three seconds of an uploaded clip into 31 frames.
 - `pose.js` builds image pyramids, tracks corners using Lucas–Kanade updates, checks the return trip and fits an essential matrix with eight-point RANSAC. For uploads it tests pose candidates for positive depth, refines the relative pose and triangulates the surviving tracks. For the simulated orbit it uses the known camera poses and measured pixel matches from frames up to four degrees apart.
 - `app.js` runs the solvers and connects the timeline, point placement and workspaces.

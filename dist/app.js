@@ -5,17 +5,16 @@ const W = 400, H = 240, focal = 420;
 const frames = new Map(), results = new Map();
 let clip, mode='create', timer, selected, anchorPoint, drag;
 function index() { return Number($('position').value); }
-function isAngular() { return !clip && $('motion').value === 'orbit'; }
-function lastIndex() { return isAngular() ? 180 : 30; }
+function lastIndex() { return !clip ? 180 : 30; }
 function travel(i) { return i / lastIndex() * .85; }
-function cameraAt(i) { return Scene.camera(travel(i), $('motion').value); }
-function reference(i) { return isAngular() ? Math.max(0, i - 2) : 0; }
+function cameraAt(i) { return Scene.camera(travel(i)); }
+function reference(i) { return !clip ? Math.max(0, i - 2) : 0; }
 function getFrame(i) {
   if (clip) return clip.frames[i];
   if (!frames.has(i)) {
     const frame = document.createElement('canvas');
     frame.width = 960; frame.height = 576;
-    Scene.draw(frame, travel(i), $('motion').value);
+    Scene.draw(frame, travel(i));
     frame.visibility=Scene.visibility(W,H);
     if(frames.size>=4) frames.delete(frames.keys().next().value);
     frames.set(i, frame);
@@ -32,12 +31,12 @@ let first;
 function solve(i) {
   if (!results.has(i)) {
     let data = {points:[], tracks:[], matches:0};
-    if (i && isAngular()) {
+    if (i && !clip) {
       const j=reference(i);
       data=Pose.solveCalibrated(pixels(j),pixels(i),focal,cameraAt(j),cameraAt(i));
     } else if(i) {
       first ||= pixels(0);
-      data=clip ? Pose.solve(first,pixels(i),focal) : Vision.solve(first,pixels(i),travel(i),focal);
+      data=Pose.solve(first,pixels(i),focal);
     }
     results.set(i,data);
   }
@@ -55,8 +54,6 @@ function setAnchor(p) {
   if(!p)return;
   const i=index();
   anchorPoint={...p,world:worldFromOrbit(p,i),heading:cameraAt(i).yaw,frame:i,observations:new Map([[i,[p.u2,p.v2]]]),unit:p.z*.063};
-  // The rectified slide solver measures Y from the sensor center.
-  if(!clip && !isAngular())anchorPoint.world.y+=.08*H*p.z/focal;
 }
 // On uploads, always identify the same patch rather than chaining matches
 // between arbitrary scrub positions. Cache misses as well as observations.
@@ -140,10 +137,10 @@ function render(){
   if(mode==='reveal'){
     const j=reference(i);
     Reveal.draw(ctx,{data,frameA:getFrame(j),frameB:getFrame(i),indexA:j,indexB:i,initialPoint:anchorPoint?.frame===i?closest(points,anchorPoint.u,anchorPoint.v):null,
-      mode:clip?'upload':$('motion').value,cameraA:clip?null:cameraAt(j),cameraB:clip?null:cameraAt(i),
+      mode:clip?'upload':'orbit',cameraA:clip?null:cameraAt(j),cameraB:clip?null:cameraAt(i),
       path:clip?null:Array.from({length:61},(_,k)=>cameraAt(k*lastIndex()/60)),composite});
   }else composite();
-  $('positionVal').textContent=isAngular() ? (i*2)+'°' : Math.round(i/30*100)+'%';
+  $('positionVal').textContent=!clip ? (i*2)+'°' : Math.round(i/30*100)+'%';
   $('position').setAttribute('aria-valuetext',$('positionVal').textContent);
   $('anchor').disabled=!anchorPoint && !points.length;
   $('count').textContent=points.length;
@@ -160,8 +157,8 @@ function stop(){clearInterval(timer);timer=null;$('play').textContent='▶';$('p
 function reset(){
   stop();frames.clear();results.clear();first=null;selected=null;anchorPoint=null;$('anchor').checked=false;
   $('position').max=lastIndex();
-  $('position').value=$('motion').value==='orbit'?2:isAngular()?0:15;
-  if($('positionLabel'))$('positionLabel').textContent=isAngular()?'Camera angle':clip?'Video position':'Camera position';
+  $('position').value=clip?15:2;
+  if($('positionLabel'))$('positionLabel').textContent=clip?'Video position':'Camera angle';
   render();
 }
 function switchMode(next){
@@ -184,7 +181,7 @@ $('fullscreen').onclick=async()=>{
   try{if(document.fullscreenElement)await document.exitFullscreen();else await $('viewer').requestFullscreen();}
   catch{$('viewer').classList.toggle('expanded');}
 };
-$('position').oninput=()=>{stop();render();};$('motion').onchange=reset;$('tracks').onchange=render;
+$('position').oninput=()=>{stop();render();};$('tracks').onchange=render;
 $('play').onclick=()=>{if(timer)return stop();if(index()===lastIndex())$('position').value=0;$('play').textContent='Ⅱ';$('play').setAttribute('aria-label','Pause camera movement');timer=setInterval(()=>{$('position').value=index()+1;render();if(index()===lastIndex())stop();},105);};
 $('anchor').onchange=()=>{if($('anchor').checked){setAnchor(closest(solve(index()).points,200,120,'u2','v2'));if(!anchorPoint)$('anchor').checked=false;}selected=null;render();};
 function canvasPixel(e){
@@ -211,9 +208,9 @@ screenCanvas.onkeydown=e=>{
   if(mode!=='reveal'||!e.key.startsWith('Arrow'))return;
   e.preventDefault();Reveal.orbit(e.key==='ArrowLeft'?-12:e.key==='ArrowRight'?12:0,e.key==='ArrowDown'?12:e.key==='ArrowUp'?-12:0);
 };
-$('source').onchange=()=>{if($('source').value==='upload'){$('source').selectedIndex=clip?2:0;$('file').click();return;}if($('source').selectedIndex===0){clip?.dispose();clip=null;if($('source').options[2])$('source').remove(2);$('motion').disabled=false;$('motion').options[0].textContent='Sideways slide';$('motion').value='orbit';$('sourceHint').hidden=true;reset();}};
+$('source').onchange=()=>{if($('source').value==='upload'){$('source').selectedIndex=clip?2:0;$('file').click();return;}if($('source').selectedIndex===0){clip?.dispose();clip=null;if($('source').options[2])$('source').remove(2);$('sourceHint').hidden=true;reset();}};
 $('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;stop();$('source').disabled=true;$('sourceHint').hidden=false;$('sourceHint').textContent='Reading video frames…';
- try{const loaded=await VideoSource.open(file);clip?.dispose();clip=loaded;if($('source').options[2])$('source').remove(2);$('source').add(new Option(file.name,'current'));$('source').value='current';$('motion').value='slide';$('motion').options[0].textContent='Estimated from video';$('motion').disabled=true;$('sourceHint').textContent='First '+clip.duration.toFixed(1)+' s · depth in camera baselines';reset();}
+ try{const loaded=await VideoSource.open(file);clip?.dispose();clip=loaded;if($('source').options[2])$('source').remove(2);$('source').add(new Option(file.name,'current'));$('source').value='current';$('sourceHint').textContent='First '+clip.duration.toFixed(1)+' s · depth in camera baselines';reset();}
  catch(e){$('sourceHint').textContent=e.message;}finally{$('source').disabled=false;$('file').value='';}};
 FX.init($('fxControls'),render);
 Reveal.init($('revealControls'),render);

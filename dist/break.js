@@ -16,13 +16,14 @@ globalThis.BreakLab = (() => {
     [[-.93,-.62,11.66],[1.42,1.84,11.78],[65,59,55]],
     [[-.8,-.49,11.55],[1.29,1.71,11.64],[196,159,118]]
   ];
-  function roomFrame(canvas,k,mode,amount,scaleTravel) {
+  function roomFrame(canvas,k,amount,scaleTravel) {
     const ctx=canvas.getContext('2d'), img=ctx.createImageData(roomW,roomH);
-    const translation=amount*(scaleTravel ? 1 : 1/k);
-    const origin=[mode==='slide'?translation:0, 0, mode==='forward'?translation:0];
+    const angle=amount*Math.PI/180*(scaleTravel ? 1 : 1/k);
+    const c=Math.cos(angle), s=Math.sin(angle);
+    const origin=[-7*s,0,7*(1-c)];
     for(let v=0;v<roomH;v++) for(let u=0;u<roomW;u++) {
       const x=(u+.5-roomW/2)/roomF, y=(roomH/2-v-.5)/roomF;
-      const ray=[x,y,1];
+      const ray=[x*c+s,y,c-x*s];
       let nearest=Infinity, hit=-1, axis=0;
       for(let n=0;n<boxes.length;n++) {
         const [min,max]=boxes[n];
@@ -65,14 +66,17 @@ globalThis.BreakLab = (() => {
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
     const ctx=canvas.getContext('2d'),img=ctx.createImageData(width,height);
     const truth=new Float32Array(width*height);
-    const eye=second?settings.travel:0;
+    const angle=(second?settings.travel:0)*Math.PI/180;
+    const c=Math.cos(angle), s=Math.sin(angle);
+    const eye={x:-7*s,y:0,z:7*(1-c),yaw:angle};
     const planes=[{z:4.3,x:-.8,y:-.33,w:1.22,h:1.35,color:[151,103,77],moving:true},
       {z:6.8,x:1.15,y:.11,w:1.9,h:1.96,color:[81,130,127]},
       {z:10,x:0,y:0,w:80,h:80,color:[120,117,109]}];
     for(let v=0,i=0;v<height;v++) for(let u=0;u<width;u++,i++) {
-      const dx=(u-width/2)/focal,dy=(height/2-v)/focal;
+      const dx=(u-width/2)/focal,dy=(height*.58-v)/focal;
       for(const p of planes) {
-        const x=eye+dx*p.z-p.x-(p.moving && second? settings.moving:0), y=dy*p.z-p.y;
+        const distance=(p.z-eye.z)/(c-dx*s);
+        const x=eye.x+(dx*c+s)*distance-p.x-(p.moving && second? settings.moving:0), y=dy*distance-p.y;
         if(Math.abs(x)>p.w*.5 || Math.abs(y)>p.h*.5)continue;
         const tx=Math.floor(x*9), ty=Math.floor(y*9);
         const detail=(hash(tx,ty)-.5)*(1-settings.repeat)+(((tx+ty)&1)-.5)*settings.repeat;
@@ -83,15 +87,15 @@ globalThis.BreakLab = (() => {
         img.data[4*i+3]=255;truth[i]=p.z;break;
       }
     }
-    return {img,truth};
+    return {img,truth,eye};
   }
   function analyze(s) {
     const a=benchFrame(s,false), b=benchFrame(s,true);
-    const {points}=Vision.solve(a.img,b.img,s.travel,focal);
+    const {points}=Pose.solveCalibrated(a.img,b.img,focal,a.eye,b.eye);
     let squared=0;
     const errors=points.map(p=>{
       const z=a.truth[p.v*width+p.u];
-      const residual=Math.hypot(p.x-(p.u-width/2)*z/focal,p.y-(height/2-p.v)*z/focal,p.z-z);
+      const residual=Math.hypot(p.x-(p.u-width/2)*z/focal,p.y-(height*.58-p.v)*z/focal,p.z-z);
       squared+=residual*residual;
       return residual;
     });
@@ -113,20 +117,20 @@ globalThis.BreakLab = (() => {
   function init(container) {
     if(container.dataset.breakInitialized)return;
     container.dataset.breakInitialized='true';
-    container.innerHTML='<style>'+css+'</style><div class="bl-wrap"><div class="bl-tabs"><button aria-pressed="true" data-tab="room">Impossible room</button><button aria-pressed="false" data-tab="bench">Tracking stress test</button></div><section data-pane="room"><h2>The impossible room</h2><p>Which gallery is life-size? Compare a small room with a copy four times larger and farther away. Start with both cameras still, then move them sideways or forward.</p><div class="bl-images">'+
-      imagePanel('World A · miniature gallery','a',roomW,roomH)+imagePanel('World B · 4× scale','b',roomW,roomH)+'</div><div class="bl-controls"><label>Camera move <select name="move"><option value="slide">Sideways slide</option><option value="forward">Move forward</option></select></label>'+
-      slider('amount','Camera travel',0,100,1,0)+'<label><input type="checkbox" name="scale"> Scale B’s camera travel by 4×</label></div><div class="bl-status"><strong data-room-measure></strong><p data-room-result></p></div></section><section data-pane="bench" hidden><h2>Tracking stress test</h2><p>These three panels sit at known depths. Change the footage and measure how closely the tracker recovers their actual 3D positions.</p><div class="bl-images">'+
+    container.innerHTML='<style>'+css+'</style><div class="bl-wrap"><div class="bl-tabs"><button aria-pressed="true" data-tab="room">Impossible room</button><button aria-pressed="false" data-tab="bench">Tracking stress test</button></div><section data-pane="room"><h2>The impossible room</h2><p>Which gallery is life-size? Compare a small room with a copy four times larger and farther away. Start with both cameras still, then orbit the center of each gallery.</p><div class="bl-images">'+
+      imagePanel('World A · miniature gallery','a',roomW,roomH)+imagePanel('World B · 4× scale','b',roomW,roomH)+'</div><div class="bl-controls">'+
+      slider('amount','World A orbit angle',0,20,1,0)+'<label><input type="checkbox" name="scale"> Scale B’s camera travel by 4×</label></div><div class="bl-status"><strong data-room-measure></strong><p data-room-result></p></div></section><section data-pane="bench" hidden><h2>Tracking stress test</h2><p>These three panels sit at known depths. Change the footage and measure how closely the tracker recovers their actual 3D positions.</p><div class="bl-images">'+
       imagePanel('Original frame','first',width,height)+imagePanel('Second frame · dots mark reconstructed corners','second',width,height)+'</div><div class="bl-bench-range">'+
-      slider('travel','Camera travel',0,1,.01,.4)+slider('texture','Surface texture',0,100,1,90)+slider('light','Lighting change',0,100,1,0)+slider('repeat','Repeated pattern',0,100,1,0)+slider('moving','Subject drift',0,1,.01,0)+slider('noise','Image noise',0,100,1,0)+'</div><div class="bl-status"><strong data-score aria-live="polite"></strong><p>3D error is the root-mean-square distance from each recovered corner to its true position, in scene units. Cyan dots fall within 0.5 units. Orange dots exceed that distance.</p><button class="bl-reset" type="button">Reset</button></div></section></div>';
+      slider('travel','Orbit angle',0,8,.5,4)+slider('texture','Surface texture',0,100,1,90)+slider('light','Lighting change',0,100,1,0)+slider('repeat','Repeated pattern',0,100,1,0)+slider('moving','Subject drift',0,1,.01,0)+slider('noise','Image noise',0,100,1,0)+'</div><div class="bl-status"><strong data-score aria-live="polite"></strong><p>3D error is the root-mean-square distance from each recovered corner to its true position, in scene units. Cyan dots fall within 0.5 units. Orange dots exceed that distance.</p><button class="bl-reset" type="button">Reset</button></div></section></div>';
     const one=q=>container.querySelector(q),el=n=>one('[name="'+n+'"]');
     function updateRoom(){
-      const mode=el('move').value, amount=Number(el('amount').value)*.02;
-      const a=roomFrame(one('[data-image="a"]'),1,mode,amount,false);
-      const b=roomFrame(one('[data-image="b"]'),4,mode,amount,el('scale').checked);
+      const amount=Number(el('amount').value);
+      const a=roomFrame(one('[data-image="a"]'),1,amount,false);
+      const b=roomFrame(one('[data-image="b"]'),4,amount,el('scale').checked);
       let changed=0;
       for(let i=0;i<a.data.length;i+=4)if(a.data[i]!==b.data[i]||a.data[i+1]!==b.data[i+1]||a.data[i+2]!==b.data[i+2])changed++;
       const lbl=el('amount').parentElement;
-      lbl.querySelector('output').textContent=amount.toFixed(2)+' u';
+      lbl.querySelector('output').textContent=amount+'°';
       one('[data-room-measure]').textContent=(100*changed/(roomW*roomH)).toFixed(1)+'% pixels differ';
       one('[data-room-result]').textContent=amount===0?'Both images line up exactly. From this frame alone either room could have produced the footage.':el('scale').checked?'Enlarge both the scene and camera travel in the same proportion and the images line up again. Recovering absolute size requires a known measurement.':'Equal camera travel has a bigger effect in the miniature room. Now scale B’s camera travel to test whether the images alone can establish absolute size.';
     }
@@ -135,7 +139,7 @@ globalThis.BreakLab = (() => {
       for(const name of ['travel','texture','light','repeat','moving','noise']){
         const input=el(name),percentage=!['travel','moving'].includes(name);
         const n=Number(input.value);s[name]=percentage?n/100:n;
-        input.parentElement.querySelector('output').textContent=percentage?n+'%':n.toFixed(2)+' u';
+        input.parentElement.querySelector('output').textContent=percentage?n+'%':name==='travel'?n+'°':n.toFixed(2)+' u';
       }
       const r=analyze(s), c1=one('[data-image="first"]').getContext('2d'),c2=one('[data-image="second"]').getContext('2d');
       c1.putImageData(r.a.img,0,0);c2.putImageData(r.b.img,0,0);
