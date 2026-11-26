@@ -323,12 +323,39 @@ globalThis.Pose = (() => {
     }
     return {points,tracks,matches:tracks.length};
   }
-  function trackPoint(a,b,p) {
-    const pa=pyramid(a),pb=pyramid(b);
-    const q=track(pa,pb,p);
-    if(!q)return null;
-    const back=track(pb,pa,q);
-    return back && Math.hypot(back[0]-p[0],back[1]-p[1])<1 ? q : null;
+  // A click can fall just inside a uniform wall or sign. If its own patch
+  // is ambiguous, require nearby patches to agree and check the center.
+  const framePyramids=new WeakMap();
+  function cachedPyramid(image){
+    if(!framePyramids.has(image))framePyramids.set(image,pyramid(image));
+    return framePyramids.get(image);
+  }
+  function trackPoint(a,b,p){
+    const pa=cachedPyramid(a),pb=cachedPyramid(b);
+    function verified(point){
+      const q=track(pa,pb,point);
+      if(!q)return null;
+      const back=track(pb,pa,q);
+      return back && Math.hypot(back[0]-point[0],back[1]-point[1])<1 ? q : null;
+    }
+    const direct=verified(p);
+    if(direct)return direct;
+    const shifts=[];
+    for(const dx of [-10,0,10])for(const dy of [-10,0,10]){
+      if(!dx && !dy)continue;
+      const point=[p[0]+dx,p[1]+dy],q=verified(point);
+      if(q)shifts.push([q[0]-point[0],q[1]-point[1]]);
+    }
+    if(shifts.length<3)return null;
+    const dx=median(shifts.map(v=>v[0])),dy=median(shifts.map(v=>v[1]));
+    if(shifts.filter(v=>Math.hypot(v[0]-dx,v[1]-dy)<1.5).length<Math.max(3,shifts.length*.6))return null;
+    const q=[p[0]+dx,p[1]+dy];
+    const inside=([x,y])=>x>=3&&y>=3&&x<a.width-4&&y<a.height-4;
+    if(!inside(p)||!inside(q))return null;
+    let error=0;
+    for(let y=-2;y<=2;y++)for(let x=-2;x<=2;x++)
+      error+=Math.abs(at(pa[0],p[0]+x,p[1]+y)-at(pb[0],q[0]+x,q[1]+y));
+    return error/25<=18?q:null;
   }
   return {solve,reconstruct,solveCalibrated,trackPoint};
 })();

@@ -21,11 +21,15 @@ function getFrame(i) {
   }
   return frames.get(i);
 }
+const uploadImages=new Map();
 function pixels(i) {
+  if(clip && uploadImages.has(i))return uploadImages.get(i);
   const sample = document.createElement('canvas');
   sample.width = W; sample.height = H;
   const c = sample.getContext('2d'); c.drawImage(getFrame(i),0,0,W,H);
-  return c.getImageData(0,0,W,H);
+  const image=c.getImageData(0,0,W,H);
+  if(clip)uploadImages.set(i,image);
+  return image;
 }
 let first;
 function solve(i) {
@@ -69,24 +73,30 @@ function placeAt(u,v) {
   $('anchor').checked=!!anchorPoint;
   render();
 }
-// On uploads, always identify the same patch rather than chaining matches
-// between arbitrary scrub positions. Cache misses as well as observations.
+// Walk outward from placement in either direction, even after a timeline jump.
 function uploadPixel(i,anchor) {
-  const measured=frame=>{
-    if(!anchor.observations.has(frame)){
-      const original=[anchor.u2,anchor.v2];
-      anchor.observations.set(frame,Pose.trackPoint(pixels(anchor.frame),pixels(frame),original));
+  const step=i<anchor.frame?-1:1, observations=anchor.observations;
+  function measured(target){
+    for(let n=anchor.frame+step;step*(target-n)>=0;n+=step){
+      if(observations.has(n))continue;
+      let q=null;
+      for(let gap=1;gap<=3 && gap<=Math.abs(n-anchor.frame) && !q;gap++){
+        const from=n-gap*step,p=observations.get(from);
+        if(p)q=Pose.trackPoint(pixels(from),pixels(n),p);
+      }
+      if(!q && Math.abs(n-anchor.frame)>3)
+        q=Pose.trackPoint(pixels(anchor.frame),pixels(n),observations.get(anchor.frame));
+      observations.set(n,q);
     }
-    return anchor.observations.get(frame);
-  };
+    return observations.get(target);
+  }
   let p=measured(i);
   if(!p && i>0 && i<lastIndex()){
-    // Bridge a single missing sample only between two nearby verified matches.
-    const a=measured(i-1),b=measured(i+1);
-    if(a && b && Math.hypot(b[0]-a[0],b[1]-a[1])<=12)
-      p=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+    const before=measured(i-step),after=measured(i+step);
+    if(before && after && Math.hypot(after[0]-before[0],after[1]-before[1])<=24)
+      p=[(before[0]+after[0])/2,(before[1]+after[1])/2];
   }
-  return p && p.map(v=>v*2.4);
+  return p && p.map(value=>value*2.4);
 }
 function effectAdapter(i,points) {
   if(!anchorPoint)return null;
@@ -102,15 +112,27 @@ function effectAdapter(i,points) {
   if(clip){
     // Upload solves have unit baseline per pair. Use the same reference corner
     // to express the fixed object in the current pair's reconstructed scale.
-    const p=closest(points,anchor.u,anchor.v),pose=solve(i).pose;
-    if(!pose||!p||Math.hypot(p.u-anchor.u,p.v-anchor.v)>1.5)return null;
+    let p=closest(points,anchor.u,anchor.v),pose=solve(i).pose;
+    let shift=null;
+    if(!pose||!p||Math.hypot(p.u-anchor.u,p.v-anchor.v)>1.5){
+      const track=uploadPixel(i,anchor);
+      if(!track)return null;
+      // Retain the placement-frame perspective while only image motion is known.
+      p=anchor;pose=solve(anchor.frame).pose;
+      const center=pose.R.map((r,k)=>r[0]*p.x-r[1]*p.y+r[2]*p.z+pose.t[k]);
+      const origin=screen(center[0],-center[1],center[2],H/2);
+      if(!origin)return null;
+      shift=[track[0]-origin[0],track[1]-origin[1]];
+    }
     const unit=p.z*.063;
     project=(x,y,z)=>{
       const a=[p.x+x*unit,-p.y-y*unit,p.z+z*unit];
       const b=pose.R.map((r,k)=>r.reduce((sum,v,j)=>sum+v*a[j],pose.t[k]));
-      return screen(b[0],-b[1],b[2],H/2);
+      const pixel=screen(b[0],-b[1],b[2],H/2);
+      if(pixel && shift){pixel[0]+=shift[0];pixel[1]+=shift[1];}
+      return pixel;
     };
-
+    return {project,scale,time,usingImageTrack:!!shift};
   }else{
     const c=Math.cos(eye.yaw),s=Math.sin(eye.yaw),ah=anchor.heading;
     project=(x,y,z)=>{
@@ -171,7 +193,8 @@ function render(){
       title=visible?'Effect placed':'Tracking unavailable here';
       if(FX.tracking==='2d'){
         tip=visible?(anchorPoint.fallback?'Placed in 2D because this spot has no reconstructed depth. Play the clip to follow it.':'Play the clip to see the effect follow the selected spot.'):'The tracker lost this spot. Click a sharper corner or return to the placement frame.';
-      }else tip=visible?'Play the clip to see the effect from the moving camera.':'Turn on Feature tracks and click a reconstructed corner here, or choose 2D point tracking.';
+      }else if(visible?.usingImageTrack)tip='This frame has a 2D match. The effect follows it using the perspective from placement.';
+      else tip=visible?'Play the clip to see the effect from the moving camera.':'Turn on Feature tracks and click a reconstructed corner here, or choose 2D point tracking.';
     }
   }
   else if(!points.length){title='Depth unavailable';tip='Choose another moment with textured surfaces visible from two different camera positions.';}
@@ -180,7 +203,7 @@ function render(){
 }
 function stop(){clearInterval(timer);timer=null;$('play').textContent='▶';$('play').setAttribute('aria-label','Play camera movement');}
 function reset(){
-  stop();frames.clear();results.clear();first=null;selected=null;anchorPoint=null;$('anchor').checked=false;
+  stop();uploadImages.clear();frames.clear();results.clear();first=null;selected=null;anchorPoint=null;$('anchor').checked=false;
   $('position').max=lastIndex();
   $('position').value=clip?15:2;
   if($('positionLabel'))$('positionLabel').textContent=clip?'Video position':'Camera angle';
