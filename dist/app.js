@@ -55,6 +55,20 @@ function setAnchor(p) {
   const i=index();
   anchorPoint={...p,world:worldFromOrbit(p,i),heading:cameraAt(i).yaw,frame:i,observations:new Map([[i,[p.u2,p.v2]]]),unit:p.z*.063};
 }
+function placeAt(u,v) {
+  const i=index(), p=closest(solve(i).points,u,v,'u2','v2');
+  const near=p && Math.hypot(p.u2-u,p.v2-v)<=14;
+  if(clip && (FX.tracking==='2d' || !near)){
+    const fallback=FX.tracking==='3d';
+    anchorPoint={frame:i,u2:u,v2:v,observations:new Map([[i,[u,v]]]),flatOnly:true,fallback};
+    if(fallback){
+      $('fxTracking').value='2d';
+      $('fxTracking').onchange();
+    }
+  }else setAnchor(p);
+  $('anchor').checked=!!anchorPoint;
+  render();
+}
 // On uploads, always identify the same patch rather than chaining matches
 // between arbitrary scrub positions. Cache misses as well as observations.
 function uploadPixel(i,anchor) {
@@ -82,6 +96,7 @@ function effectAdapter(i,points) {
     const track=uploadPixel(i,anchor);
     return track ? {track,scale,time} : null;
   }
+  if(clip && anchor.flatOnly)return null;
   const screen=(x,y,z,center)=>z>.02?[(W*.5+focal*x/z)*2.4,(center-focal*y/z)*2.4,z]:null;
   let project;
   if(clip){
@@ -141,13 +156,24 @@ function render(){
   }else composite();
   $('positionVal').textContent=!clip ? (i*2)+'°' : Math.round(i/30*100)+'%';
   $('position').setAttribute('aria-valuetext',$('positionVal').textContent);
-  $('anchor').disabled=!anchorPoint && !points.length;
+  $('anchor').disabled=!clip && !anchorPoint && !points.length;
   $('count').textContent=points.length;
   $('shift').textContent=(tracks.reduce((a,p)=>a+Math.hypot(p.u-p.u2,p.v-p.v2),0)/(tracks.length||1)).toFixed(1);
   $('legendText').textContent=mode==='reveal'?'Reconstruction layers':$('tracks').checked?tracks.length+' tracked corners':'Click a corner to place an effect';
   $('sceneTag').textContent=mode==='reveal'?'RECONSTRUCTION':clip?clip.name.toUpperCase():'DESERT OBSERVATORY';
   let title='Create',tip='Click a window corner to place a portal. Play the orbit, then choose Break the Frame to inspect the 3D point that holds the effect in place.';
   if(mode==='reveal'){title='Two frames, one point';tip='The footage stores only pixels. A corner seen from two camera positions gives two lines of sight. Select Triangulation to see how they locate it in space.';}
+  else if(clip){
+    $('panelHelp').textContent='Click a distinctive corner in your footage to place the selected effect.';
+    tip='Click a corner in the footage. A nearby reconstructed point supports 3D placement. Other spots use 2D point tracking.';
+    if(anchorPoint && $('anchor').checked){
+      const visible=effectAdapter(i,points);
+      title=visible?'Effect placed':'Tracking unavailable here';
+      if(FX.tracking==='2d'){
+        tip=visible?(anchorPoint.fallback?'Placed in 2D because this spot has no reconstructed depth. Play the clip to follow it.':'Play the clip to see the effect follow the selected spot.'):'The tracker lost this spot. Click a sharper corner or return to the placement frame.';
+      }else tip=visible?'Play the clip to see the effect from the moving camera.':'Turn on Feature tracks and click a reconstructed corner here, or choose 2D point tracking.';
+    }
+  }
   else if(!points.length){title='Depth unavailable';tip='Choose another moment with textured surfaces visible from two different camera positions.';}
   else if(anchorPoint&&$('anchor').checked){title='Effect placed';tip='Play the shot or scrub the timeline. Compare 2D point tracking with 3D camera tracking to see how perspective changes your object.';}
   $('tipTitle').textContent=title;$('tip').textContent=tip;
@@ -158,6 +184,7 @@ function reset(){
   $('position').max=lastIndex();
   $('position').value=clip?15:2;
   if($('positionLabel'))$('positionLabel').textContent=clip?'Video position':'Camera angle';
+  if(!clip && mode==='create')$('panelHelp').textContent='Click a window corner to place your object. Play the orbit to see it stay attached.';
   render();
 }
 function switchMode(next){
@@ -180,7 +207,7 @@ $('fullscreen').onclick=async()=>{
 };
 $('position').oninput=()=>{stop();render();};$('tracks').onchange=render;
 $('play').onclick=()=>{if(timer)return stop();if(index()===lastIndex())$('position').value=0;$('play').textContent='Ⅱ';$('play').setAttribute('aria-label','Pause camera movement');timer=setInterval(()=>{$('position').value=index()+1;render();if(index()===lastIndex())stop();},105);};
-$('anchor').onchange=()=>{if($('anchor').checked){setAnchor(closest(solve(index()).points,200,120,'u2','v2'));if(!anchorPoint)$('anchor').checked=false;}selected=null;render();};
+$('anchor').onchange=()=>{if($('anchor').checked && !anchorPoint)placeAt(W/2,H/2);else render();};
 function canvasPixel(e){
   const r=screenCanvas.getBoundingClientRect(),scale=Math.min(r.width/960,r.height/576);
   return [(e.clientX-r.left-(r.width-960*scale)/2)/scale,(e.clientY-r.top-(r.height-576*scale)/2)/scale];
@@ -189,8 +216,7 @@ screenCanvas.onpointerdown=e=>{
   stop();
   if(mode==='reveal'){drag={x:e.clientX,y:e.clientY,travel:0};screenCanvas.setPointerCapture(e.pointerId);return;}
   const [x,y]=canvasPixel(e);
-  selected=closest(solve(index()).points,x/2.4,y/2.4,'u2','v2');
-  if(selected){setAnchor(selected);$('anchor').checked=true;}render();
+  placeAt(x/2.4,y/2.4);
 };
 screenCanvas.onpointermove=e=>{
   if(!drag)return;
@@ -201,7 +227,7 @@ screenCanvas.onpointermove=e=>{
 screenCanvas.onpointerup=e=>{if(drag&&drag.travel<=3)Reveal.pick(...canvasPixel(e));drag=null;};
 screenCanvas.onpointercancel=()=>drag=null;
 screenCanvas.onkeydown=e=>{
-  if(mode==='create'&&e.key==='Enter'){setAnchor(closest(solve(index()).points,200,120,'u2','v2'));$('anchor').checked=!!anchorPoint;render();return;}
+  if(mode==='create'&&e.key==='Enter'){placeAt(W/2,H/2);return;}
   if(mode!=='reveal'||!e.key.startsWith('Arrow'))return;
   e.preventDefault();Reveal.orbit(e.key==='ArrowLeft'?-12:e.key==='ArrowRight'?12:0,e.key==='ArrowDown'?12:e.key==='ArrowUp'?-12:0);
 };
